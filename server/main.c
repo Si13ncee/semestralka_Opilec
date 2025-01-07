@@ -13,6 +13,7 @@
 typedef struct {
     int** world;
     sem_t mutex;
+
 } simulation;
 
 typedef struct {
