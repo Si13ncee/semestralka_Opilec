@@ -6,6 +6,7 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <pthread.h>
 
 #define DEFAULT_WORLD_SIZE 50
 
@@ -62,6 +63,42 @@ void *clientHandler(void *arg) {
     }
 
 
+
+    listen(sockfd , 5);
+    clilen = sizeof(cli_addr);
+
+    newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+
+    if (newsockfd < 0)
+    {
+        error("Error pri accepte!");
+    }
+
+    while (1) {
+
+        bzero(buffer, 255);
+        n = read(newsockfd, buffer, 255);
+        if (n < 0){
+            error("Error pri čítaní správy.");
+        }
+        printf("Client : %s\n", buffer);
+        bzero(buffer, 255);
+        fgets(buffer, 255, stdin);
+
+        n = write(newsockfd, buffer, strlen(buffer));
+        if (n < 0) {
+            error("Error pri písaní správy.");
+        }
+
+        int i = strncmp("Bye", buffer, 3);
+        if (i == 0) {
+            break;
+        }
+    }
+    close(newsockfd);
+    close(sockfd);
+    return 0;
+
 }
 
 void *simulationManager(void *arg) {
@@ -72,7 +109,11 @@ void *simulationManager(void *arg) {
 int main(int argc, char** argv) {
     startupCommands sc = {.argc = argc, .argv = argv};
 
+    pthread_t clientManager;
+    pthread_create(&clientManager, NULL, &clientHandler, &sc );
 
+
+    pthread_join(clientManager, NULL);
 
     return 0;
 }
