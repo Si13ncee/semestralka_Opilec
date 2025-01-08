@@ -7,6 +7,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <pthread.h>
+#include <time.h>
 
 #define DEFAULT_WORLD_SIZE 50
 #define DEFAULT_NUM_OF_REPLICATIONS 1000
@@ -19,7 +20,7 @@ typedef struct {
 } opilec;
 
 typedef struct {
-    int** world; // 0- prázdne políčko; 1- prekážka
+    int** world; // 0- prázdne políčko; 1- prekážka; 2- opilec
     //sem_t mutex;
     sem_t canRun;
     int mode; // 0-interaktívny; 1-sumárny
@@ -34,6 +35,37 @@ typedef struct {
     simulation* sim_c;
 } config;
 
+int pointInBounds(int x, int y) {
+    return x >= 0 && x < DEFAULT_WORLD_SIZE && y >= 0 && y < DEFAULT_WORLD_SIZE;
+}
+
+int dfs(simulation* sim, int fromStartX, int fromStartY, opilec* op, int** navstivene) {
+    // Ak sme mimo mapy, na prekážke alebo už navštívení
+    if (!pointInBounds(fromStartX, fromStartY) || sim->world[fromStartX][fromStartY] == 1 || navstivene[fromStartX][fromStartY]) {
+        return 0;
+    }
+
+    // Ak sme dosiahli cieľ
+    if (fromStartX == op->x && fromStartY == op->y) {
+        return 1;
+    }
+
+    // Označiť ako navštívené
+    navstivene[fromStartX][fromStartY] = 1;
+
+    // Pohyb hore, dole, vľavo, vpravo
+    int dx[] = {1, -1, 0, 0};
+    int dy[] = {0, 0, 1, -1};
+    // Rekurzívne skúmať susedov
+    for (int i = 0; i < 4; i++) {
+        if (dfs(sim, fromStartX + dx[i], fromStartY + dy[i], op, navstivene)) {
+            return 1;
+        }
+    }
+
+    return 0; // Žiadna cesta
+}
+
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
 int initializeWorld(simulation* sim, int simType, int mode) {
     sim->world = malloc((DEFAULT_WORLD_SIZE * DEFAULT_WORLD_SIZE) * sizeof(int));
@@ -41,6 +73,9 @@ int initializeWorld(simulation* sim, int simType, int mode) {
     sim->NumOfReplications = DEFAULT_NUM_OF_REPLICATIONS;
     sim->simType = simType;
     sim->mode = mode;
+
+    sim->op->x = rand() % DEFAULT_WORLD_SIZE;
+    sim->op->y = rand() % DEFAULT_WORLD_SIZE;
 
     if (simType == 0) { // setup bez prekážok
         for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
@@ -51,11 +86,13 @@ int initializeWorld(simulation* sim, int simType, int mode) {
     } else if (simType == 1) { // setup s prekážkami
         for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
             for (int j = 0; j < DEFAULT_WORLD_SIZE; j++) {
-                if (rand() % 100 < DEFAULT_BLOCKADE_CHANCE) {
+                int** navstivene = malloc(DEFAULT_WORLD_SIZE * DEFAULT_WORLD_SIZE * sizeof(int));
+                if (rand() % 100 < DEFAULT_BLOCKADE_CHANCE && dfs(sim, 0, 0, sim->op, navstivene) && (i != 0 && j != 0)) {
                     sim->world[i][j] = 1;
-                } else {
+                } else if (sim->world[i][j] != 2) {
                     sim->world[i][j] = 0;
                 }
+                free(navstivene);
 
             }
         }
@@ -64,8 +101,7 @@ int initializeWorld(simulation* sim, int simType, int mode) {
         return -1;
     }
 
-    sim->op->x = rand() % DEFAULT_WORLD_SIZE;
-    sim->op->y = rand() % DEFAULT_WORLD_SIZE;
+
 
 
 
