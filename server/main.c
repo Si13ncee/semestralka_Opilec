@@ -4,8 +4,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
-#include <sys/socket.h>
-#include <netinet/in.h>
+//#include <sys/socket.h>
+// <netinet/in.h>
 #include <pthread.h>
 #include <time.h>
 
@@ -68,8 +68,12 @@ int dfs(simulation* sim, int fromStartX, int fromStartY, opilec* op, int** navst
 
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
 int initializeWorld(simulation* sim, int simType, int mode) {
-    sim->world = malloc((DEFAULT_WORLD_SIZE * DEFAULT_WORLD_SIZE) * sizeof(int));
-    sem_init(sim->canRun, 0, 1);
+    sim->world = malloc(DEFAULT_WORLD_SIZE * sizeof(int*)); // Pole ukazovateľov na riadky
+    for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
+        sim->world[i] = malloc(DEFAULT_WORLD_SIZE * sizeof(int)); // Každý riadok
+    }
+
+    //sem_init(sim->canRun, 0, 1);
     sim->NumOfReplications = DEFAULT_NUM_OF_REPLICATIONS;
     sim->simType = simType;
     sim->mode = mode;
@@ -83,24 +87,28 @@ int initializeWorld(simulation* sim, int simType, int mode) {
                 sim->world[i][j] = 0;
             }
         }
+        sim->world[sim->op->x][sim->op->y] = 2;
+
     } else if (simType == 1) { // setup s prekážkami
         for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
             for (int j = 0; j < DEFAULT_WORLD_SIZE; j++) {
                 int** navstivene = malloc(DEFAULT_WORLD_SIZE * DEFAULT_WORLD_SIZE * sizeof(int));
-                if (rand() % 100 < DEFAULT_BLOCKADE_CHANCE && dfs(sim, 0, 0, sim->op, navstivene) && (i != 0 && j != 0)) {
+                if (rand() % 100 < DEFAULT_BLOCKADE_CHANCE && dfs(sim, 0, 0, sim->op, navstivene) && (i != 0 && j != 0) && (i != sim->op->x && j != sim->op->y)) {
                     sim->world[i][j] = 1;
-                } else if (sim->world[i][j] != 2) {
+                } else{
                     sim->world[i][j] = 0;
                 }
                 free(navstivene);
-
             }
         }
+        sim->world[sim->op->x][sim->op->y] = 2;
     } else {
         printf("Zle zadaný vstup typu simulácie.");
         return -1;
     }
 
+
+    printf("Prešla generácia.");
 
 
 
@@ -108,7 +116,7 @@ int initializeWorld(simulation* sim, int simType, int mode) {
     return 0;
 }
 
-void *clientHandler(void *arg) {
+/*void *clientHandler(void *arg) {
     int server_fd, new_socket;
     ssize_t valread;
     struct sockaddr_in address;
@@ -165,7 +173,7 @@ void *clientHandler(void *arg) {
     close(server_fd);
     return 0;
 
-}
+}*/
 
 void *simulationManager(void *arg) {
     simulation *sim = (simulation*) arg;
@@ -185,13 +193,13 @@ int main(int argc, char** argv) {
     opilec opi;
     sim.op = &opi;
     config sc = {.argc = argc, .argv = argv, .sim_c = &sim};
-    //initializeWorld(&sim);
+    initializeWorld(&sim, 0, 0);
 
     pthread_t clientManager;
     pthread_t simulationManagerT;
 
-    pthread_create(&clientManager, NULL, &clientHandler, &sc );
-    pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
+    //pthread_create(&clientManager, NULL, &clientHandler, &sc );
+    //pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
 
     pthread_join(clientManager, NULL);
     free(sim.world);
