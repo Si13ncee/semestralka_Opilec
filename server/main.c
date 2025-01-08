@@ -96,6 +96,7 @@ int initializeWorld(simulation* sim, int simType, int mode) {
                 for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
                     navstivene[i] = malloc(DEFAULT_WORLD_SIZE * sizeof(int)); // Každý riadok
                 }
+                /*!!TODO ZISTIT PRECO NEJDE GENEROVANIE BLOKADY!!*/
                 if (rand() % 100 < DEFAULT_BLOCKADE_CHANCE && dfs(sim, 0, 0, sim->op, navstivene) && (i != 0 && j != 0) && (i != sim->op->x && j != sim->op->y)) {
                     sim->world[i][j] = 1;
                 } else{
