@@ -10,6 +10,8 @@
 
 #define DEFAULT_WORLD_SIZE 50
 #define DEFAULT_NUM_OF_REPLICATIONS 1000
+#define DEFAULT_MOVEMENT_CHANCE 25
+#define DEFAULT_BLOCKADE_CHANCE 10
 
 typedef struct {
     int x;
@@ -17,7 +19,7 @@ typedef struct {
 } opilec;
 
 typedef struct {
-    int** world;
+    int** world; // 0- prázdne políčko; 1- prekážka
     //sem_t mutex;
     sem_t canRun;
     int mode; // 0-interaktívny; 1-sumárny
@@ -41,16 +43,29 @@ int initializeWorld(simulation* sim, int simType, int mode) {
     sim->mode = mode;
 
     if (simType == 0) { // setup bez prekážok
-        sim->op->x = rand() % DEFAULT_WORLD_SIZE;
-        sim->op->y = rand() % DEFAULT_WORLD_SIZE;
+        for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
+            for (int j = 0; j < DEFAULT_WORLD_SIZE; j++) {
+                sim->world[i][j] = 0;
+            }
+        }
     } else if (simType == 1) { // setup s prekážkami
         for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
+            for (int j = 0; j < DEFAULT_WORLD_SIZE; j++) {
+                if (rand() % 100 < DEFAULT_BLOCKADE_CHANCE) {
+                    sim->world[i][j] = 1;
+                } else {
+                    sim->world[i][j] = 0;
+                }
 
+            }
         }
     } else {
         printf("Zle zadaný vstup typu simulácie.");
         return -1;
     }
+
+    sim->op->x = rand() % DEFAULT_WORLD_SIZE;
+    sim->op->y = rand() % DEFAULT_WORLD_SIZE;
 
 
 
