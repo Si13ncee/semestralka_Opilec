@@ -92,7 +92,10 @@ int initializeWorld(simulation* sim, int simType, int mode) {
     } else if (simType == 1) { // setup s prekážkami
         for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
             for (int j = 0; j < DEFAULT_WORLD_SIZE; j++) {
-                int** navstivene = malloc(DEFAULT_WORLD_SIZE * DEFAULT_WORLD_SIZE * sizeof(int));
+                int** navstivene = malloc(DEFAULT_WORLD_SIZE * sizeof(int*)); // Pole ukazovateľov na riadky
+                for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
+                    navstivene[i] = malloc(DEFAULT_WORLD_SIZE * sizeof(int)); // Každý riadok
+                }
                 if (rand() % 100 < DEFAULT_BLOCKADE_CHANCE && dfs(sim, 0, 0, sim->op, navstivene) && (i != 0 && j != 0) && (i != sim->op->x && j != sim->op->y)) {
                     sim->world[i][j] = 1;
                 } else{
@@ -108,8 +111,14 @@ int initializeWorld(simulation* sim, int simType, int mode) {
     }
 
 
-    printf("Prešla generácia.");
+    printf("Prešla generácia.\n");
 
+    for (int row = 0; row < DEFAULT_WORLD_SIZE; row++) {
+        for (int col = 0; col < DEFAULT_WORLD_SIZE; col++) {
+            printf("%d ", sim->world[row][col]);
+        }
+        printf("\n"); // Nový riadok pre každý riadok poľa
+    }
 
 
 
@@ -193,7 +202,7 @@ int main(int argc, char** argv) {
     opilec opi;
     sim.op = &opi;
     config sc = {.argc = argc, .argv = argv, .sim_c = &sim};
-    initializeWorld(&sim, 0, 0);
+    initializeWorld(&sim, 1, 0);
 
     pthread_t clientManager;
     pthread_t simulationManagerT;
