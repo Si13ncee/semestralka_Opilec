@@ -67,19 +67,23 @@ int dfs(simulation* sim, int fromStartX, int fromStartY, opilec* op, int** navst
 }
 
 void vypisSim(simulation* sim) {
-    for (int row = 0; row < DEFAULT_WORLD_SIZE; row++) {
-        for (int col = 0; col < DEFAULT_WORLD_SIZE; col++) {
-            if (sim->world[row][col] == 0)
-                printf(".  "); // prázdne miesto
-            if (sim->world[row][col] == 1)
-                printf("#  "); // prekážka
-            if (sim->world[row][col] == 2)
-                printf("X  "); // opilec
+    if(sim->mode == 0){ // interaktívny mód
+        for (int row = 0; row < DEFAULT_WORLD_SIZE; row++) {
+            for (int col = 0; col < DEFAULT_WORLD_SIZE; col++) {
+                if (sim->world[row][col] == 0)
+                    printf(".  "); // prázdne miesto
+                if (sim->world[row][col] == 1)
+                    printf("#  "); // prekážka
+                if (sim->world[row][col] == 2)
+                    printf("X  "); // opilec
+            }
+            printf("\n"); // Nový riadok pre každý riadok poľa
         }
-        printf("\n"); // Nový riadok pre každý riadok poľa
+        printf("\nLegenda: \n. -> voľné miesto\n# -> prekážka\nX -> opilec");
+    } else {
+        printf("Nesprávny mód!");
+        return;
     }
-
-    printf("\nLegenda: \n. -> voľné miesto\n# -> prekážka\nX -> opilec");
 }
 
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
@@ -206,6 +210,9 @@ void *simulationManager(void *arg) {
         // tu sa bude čakať, kým bude simulácia spustiteľná.
         sem_wait(sim->canRun);
         //akonáhle príde správa od clientHandlera že je spustiteľná, tak sa začne vykonávať.
+
+
+
         break;
 
     }
