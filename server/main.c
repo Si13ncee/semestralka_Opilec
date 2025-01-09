@@ -12,7 +12,7 @@
 #define DEFAULT_WORLD_SIZE 20
 #define DEFAULT_NUM_OF_REPLICATIONS 1000
 #define DEFAULT_MOVEMENT_CHANCE 25
-#define DEFAULT_BLOCKADE_CHANCE 10
+#define DEFAULT_BLOCKADE_CHANCE 50
 
 typedef struct {
     int x;
@@ -64,6 +64,22 @@ int dfs(simulation* sim, int fromStartX, int fromStartY, opilec* op, int** navst
     }
 
     return 0; // Žiadna cesta
+}
+
+void vypisSim(simulation* sim) {
+    for (int row = 0; row < DEFAULT_WORLD_SIZE; row++) {
+        for (int col = 0; col < DEFAULT_WORLD_SIZE; col++) {
+            if (sim->world[row][col] == 0)
+                printf(".  "); // prázdne miesto
+            if (sim->world[row][col] == 1)
+                printf("#  "); // prekážka
+            if (sim->world[row][col] == 2)
+                printf("X  "); // opilec
+        }
+        printf("\n"); // Nový riadok pre každý riadok poľa
+    }
+
+    printf("\nLegenda: \n. -> voľné miesto\n# -> prekážka\nX -> opilec");
 }
 
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
@@ -120,24 +136,7 @@ int initializeWorld(simulation* sim, int simType, int mode) {
         return -1;
     }
 
-
-    printf("Prešla generácia.\n");
-
-    for (int row = 0; row < DEFAULT_WORLD_SIZE; row++) {
-        for (int col = 0; col < DEFAULT_WORLD_SIZE; col++) {
-            if (sim->world[row][col] == 0)
-                printf(". ");
-            if (sim->world[row][col] == 1)
-                printf("# ");
-            if (sim->world[row][col] == 2)
-                printf("X ");
-
-
-        }
-        printf("\n"); // Nový riadok pre každý riadok poľa
-    }
-
-
+    vypisSim(sim);
 
     return 0;
 }
