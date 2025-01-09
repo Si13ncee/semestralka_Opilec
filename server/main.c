@@ -9,7 +9,7 @@
 #include <pthread.h>
 #include <time.h>
 
-#define DEFAULT_WORLD_SIZE 50
+#define DEFAULT_WORLD_SIZE 20
 #define DEFAULT_NUM_OF_REPLICATIONS 1000
 #define DEFAULT_MOVEMENT_CHANCE 25
 #define DEFAULT_BLOCKADE_CHANCE 10
@@ -41,7 +41,7 @@ int pointInBounds(int x, int y) {
 
 int dfs(simulation* sim, int fromStartX, int fromStartY, opilec* op, int** navstivene) {
     // Ak sme mimo mapy, na prekážke alebo už navštívení
-    if (!pointInBounds(fromStartX, fromStartY) || sim->world[fromStartX][fromStartY] == 1 || navstivene[fromStartX][fromStartY]) {
+    if (!pointInBounds(fromStartX, fromStartY) || sim->world[fromStartX][fromStartY] == 1 || navstivene[fromStartX][fromStartY] == 1) {
         return 0;
     }
 
@@ -90,21 +90,30 @@ int initializeWorld(simulation* sim, int simType, int mode) {
         sim->world[sim->op->x][sim->op->y] = 2;
 
     } else if (simType == 1) { // setup s prekážkami
+        int** navstivene = malloc(DEFAULT_WORLD_SIZE * sizeof(int*)); // Pole ukazovateľov na riadky
+        for (int s = 0; s < DEFAULT_WORLD_SIZE; s++) {
+            navstivene[s] = malloc(DEFAULT_WORLD_SIZE * sizeof(int)); // Každý riadok
+        }
+
+
         for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
             for (int j = 0; j < DEFAULT_WORLD_SIZE; j++) {
-                int** navstivene = malloc(DEFAULT_WORLD_SIZE * sizeof(int*)); // Pole ukazovateľov na riadky
-                for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
-                    navstivene[i] = malloc(DEFAULT_WORLD_SIZE * sizeof(int)); // Každý riadok
+
+                for (int k = 0; k < DEFAULT_WORLD_SIZE; k++) {
+                    for (int l = 0; l < DEFAULT_WORLD_SIZE; l++) {
+                        navstivene[k][l] = 0;
+                    }
                 }
-                /*!!TODO ZISTIT PRECO NEJDE GENEROVANIE BLOKADY!!*/
+
                 if (rand() % 100 < DEFAULT_BLOCKADE_CHANCE && dfs(sim, 0, 0, sim->op, navstivene) && (i != 0 && j != 0) && (i != sim->op->x && j != sim->op->y)) {
                     sim->world[i][j] = 1;
                 } else{
                     sim->world[i][j] = 0;
                 }
-                free(navstivene);
+
             }
         }
+        free(navstivene);
         sim->world[sim->op->x][sim->op->y] = 2;
     } else {
         printf("Zle zadaný vstup typu simulácie.");
@@ -116,7 +125,14 @@ int initializeWorld(simulation* sim, int simType, int mode) {
 
     for (int row = 0; row < DEFAULT_WORLD_SIZE; row++) {
         for (int col = 0; col < DEFAULT_WORLD_SIZE; col++) {
-            printf("%d ", sim->world[row][col]);
+            if (sim->world[row][col] == 0)
+                printf(". ");
+            if (sim->world[row][col] == 1)
+                printf("# ");
+            if (sim->world[row][col] == 2)
+                printf("X ");
+
+
         }
         printf("\n"); // Nový riadok pre každý riadok poľa
     }
