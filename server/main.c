@@ -4,8 +4,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
-//#include <sys/socket.h>
-// <netinet/in.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
 #include <pthread.h>
 #include <time.h>
 
@@ -13,6 +13,7 @@
 #define DEFAULT_NUM_OF_REPLICATIONS 1000
 #define DEFAULT_MOVEMENT_CHANCE 25
 #define DEFAULT_BLOCKADE_CHANCE 50
+#define PORT 10023
 
 typedef enum { RUNNING, STOPPED, PAUSED } SimulationState;
 
@@ -162,6 +163,7 @@ int initializeWorld(simulation* sim, int simType, int mode) {
 }
 
 void *clientHandler(void *arg) {
+
     int server_fd, new_socket;
     ssize_t valread;
     struct sockaddr_in address;
@@ -310,6 +312,10 @@ void *simulationManager(void *arg) {
 
 int main(int argc, char** argv) {
     srand(time(NULL));
+    if (argc < 2) {
+        printf("\nNezadal si číslo socektu!\n");
+        return -1;
+    }
     simulation sim;
     opilec opi;
     sim.op = &opi;
@@ -322,13 +328,15 @@ int main(int argc, char** argv) {
     opi.chanceRight = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceLeft = DEFAULT_MOVEMENT_CHANCE;
 
-    //pthread_t clientManager;
+    pthread_t clientManager;
     pthread_t simulationManagerT;
 
-    //pthread_create(&clientManager, NULL, &clientHandler, &sc );
+    pthread_create(&clientManager, NULL, &clientHandler, &sc );
     pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
 
     pthread_join(simulationManagerT, NULL);
+    pthread_join(clientManager, NULL);
+
     for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
         free(sim.world[i]);
     }
