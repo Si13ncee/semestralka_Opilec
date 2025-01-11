@@ -37,13 +37,17 @@ typedef struct {
     int simType; // 0- bez prekážok; 1- s prekážkami
     int NumOfReplications;
     opilec* op;
-
+    int pocetKrokov;
 } simulation;
 
 typedef struct {
     int argc;
     char** argv;
     simulation* sim_c;
+
+    char simulationName[100];
+    int rozmerX;
+    int rozmerY;
 } config;
 
 int pointInBounds(int x, int y) {
@@ -164,6 +168,8 @@ int initializeWorld(simulation* sim, int simType, int mode) {
 
 void *clientHandler(void *arg) {
 
+    config* conf = (config*) arg;
+
     int server_fd, new_socket;
     ssize_t valread;
     struct sockaddr_in address;
@@ -172,54 +178,201 @@ void *clientHandler(void *arg) {
     char buffer[1024] = { 0 };
     char* hello = "Hello from server";
 
-    // Creating socket file descriptor
+
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
         perror("socket failed");
         exit(EXIT_FAILURE);
     }
 
-    // Forcefully attaching socket to the port 8080
-    if (setsockopt(server_fd, SOL_SOCKET,
-                   SO_REUSEADDR | SO_REUSEPORT, &opt,
-                   sizeof(opt))) {
+    if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR | SO_REUSEPORT, &opt, sizeof(opt))) {
         perror("setsockopt");
         exit(EXIT_FAILURE);
     }
+
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = INADDR_ANY;
     address.sin_port = htons(PORT);
 
-    // Forcefully attaching socket to the port 8080
-    if (bind(server_fd, (struct sockaddr*)&address,
-             sizeof(address))
-        < 0) {
+
+    if (bind(server_fd, (struct sockaddr*)&address, sizeof(address)) < 0) {
         perror("bind failed");
         exit(EXIT_FAILURE);
     }
+
     if (listen(server_fd, 3) < 0) {
         perror("listen");
         exit(EXIT_FAILURE);
     }
-    if ((new_socket
-                 = accept(server_fd, (struct sockaddr*)&address,
-                          &addrlen))
-        < 0) {
-        perror("accept");
-        exit(EXIT_FAILURE);
+
+    printf("Server listening on port %d...\n", PORT);
+
+    while (1) {
+        if ((new_socket = accept(server_fd, (struct sockaddr *) &address, &addrlen)) < 0) {
+            perror("accept");
+            exit(EXIT_FAILURE);
+        }
+
+        printf("New client connected!\n");
+
+        // Kontinuálna komunikácia
+        while (1) {
+            memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+            send(new_socket, "Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] ukončiť\n", strlen("Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] ukončiť"), 0);
+
+            valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0); // Čítanie dát od klienta
+            if (valread <= 0) {
+                if (valread == 0) {
+                    printf("Client disconnected.\n");
+                } else {
+                    perror("recv failed");
+                }
+                break;
+            }
+
+            buffer[valread] = '\0'; // Pridanie null terminátora
+            printf("Správa od klienta: %s\n", buffer);
+
+            if (strcmp(buffer, "1") == 0) {
+
+                // ZADANIE NÁZVU SIMULÁCIE
+                send(new_socket, "Zadajte názov simulácie: ", strlen("Zadajte názov simulácie: "), 0);
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                if (valread > 0) {
+                    buffer[valread] = '\0';
+                    pthread_mutex_lock(&conf->sim_c->mutex);
+                    strncpy(conf->simulationName, buffer, sizeof(conf->simulationName) - 1);
+                    conf->simulationName[sizeof(conf->simulationName) - 1] = '\0';
+                    printf("Názov simulácie: %s\n", conf->simulationName);
+                    pthread_mutex_unlock(&conf->sim_c->mutex);
+                }
+
+                // ZADANIE POČTU REPLIKÁCIÍ
+                send(new_socket, "Zadajte počet replikácií simulácie: ",
+                     strlen("Zadajte počet replikácií simulácie: "), 0);
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                if (valread > 0) {
+                    buffer[valread] = '\0';
+                    pthread_mutex_lock(&conf->sim_c->mutex);
+                    conf->sim_c->NumOfReplications = atoi(buffer);
+                    printf("Počet replikácií simulácie: %d\n", conf->sim_c->NumOfReplications);
+                    pthread_mutex_unlock(&conf->sim_c->mutex);
+                }
+
+                // ZADANIE ROZMEROV
+                send(new_socket, "Zadajte rozmer mapy X: ",
+                     strlen("Zadajte rozmer mapy X: "), 0);
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                if (valread > 0) {
+                    buffer[valread] = '\0';
+                    pthread_mutex_lock(&conf->sim_c->mutex);
+                    conf->rozmerX = atoi(buffer);
+                    printf("Rozmer mapy X: %d\n", conf->rozmerX);
+                    pthread_mutex_unlock(&conf->sim_c->mutex);
+                }
+                send(new_socket, "Zadajte rozmer mapy Y: ",
+                     strlen("Zadajte rozmer mapy Y: "), 0);
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                if (valread > 0) {
+                    buffer[valread] = '\0';
+                    pthread_mutex_lock(&conf->sim_c->mutex);
+                    conf->rozmerY = atoi(buffer);
+                    printf("Rozmer mapy Y: %d\n", conf->rozmerY);
+                    pthread_mutex_unlock(&conf->sim_c->mutex);
+                }
+
+                while(1) {
+                    // ZADANIE Pravdepodobnosti
+                    send(new_socket, "Zadajte pravdepodobnosť pohybu Hore: ",
+                         strlen("Zadajte pravdepodobnosť pohybu Hore: "), 0);
+                    memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                    valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                    if (valread > 0) {
+                        buffer[valread] = '\0';
+                        pthread_mutex_lock(&conf->sim_c->mutex);
+                        conf->sim_c->op->chanceUp = atoi(buffer);
+                        printf("Pravdepodonosť pohybu hore: %d\n", conf->sim_c->op->chanceUp);
+                        pthread_mutex_unlock(&conf->sim_c->mutex);
+                    }
+
+                    send(new_socket, "Zadajte pravdepodobnosť pohybu Vpravo: ",
+                         strlen("Zadajte pravdepodobnosť pohybu Vpravo: "), 0);
+                    memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                    valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                    if (valread > 0) {
+                        buffer[valread] = '\0';
+                        pthread_mutex_lock(&conf->sim_c->mutex);
+                        conf->sim_c->op->chanceRight = atoi(buffer);
+                        printf("Pravdepodonosť pohybu Vpravo: %d\n", conf->sim_c->op->chanceRight);
+                        pthread_mutex_unlock(&conf->sim_c->mutex);
+                    }
+
+                    send(new_socket, "Zadajte pravdepodobnosť pohybu Dole: ",
+                         strlen("Zadajte pravdepodobnosť pohybu Dole: "), 0);
+                    memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                    valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                    if (valread > 0) {
+                        buffer[valread] = '\0';
+                        pthread_mutex_lock(&conf->sim_c->mutex);
+                        conf->sim_c->op->chanceDown = atoi(buffer);
+                        printf("Pravdepodonosť pohybu Dole: %d\n", conf->sim_c->op->chanceDown);
+                        pthread_mutex_unlock(&conf->sim_c->mutex);
+                    }
+
+                    send(new_socket, "Zadajte pravdepodobnosť pohybu Vľavo: ",
+                         strlen("Zadajte pravdepodobnosť pohybu Vľavo: "), 0);
+                    memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                    valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                    if (valread > 0) {
+                        buffer[valread] = '\0';
+                        pthread_mutex_lock(&conf->sim_c->mutex);
+                        conf->sim_c->op->chanceLeft = atoi(buffer);
+                        printf("Pravdepodonosť pohybu Vľavo: %d\n", conf->sim_c->op->chanceLeft);
+                        pthread_mutex_unlock(&conf->sim_c->mutex);
+                    }
+
+                    if (conf->sim_c->op->chanceUp + conf->sim_c->op->chanceRight + conf->sim_c->op->chanceDown + conf->sim_c->op->chanceLeft == 100) {
+                        break;
+                    } else {
+                        send(new_socket, "Zadali ste zlé hodnoty. Pravdepodobnosť musí byť rovná 100",
+                             strlen("Zadali ste zlé hodnoty. Pravdepodobnosť musí byť rovná 100"), 0);
+                        memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                    }
+                }
+
+                // ZADANIE MAXIMÁLNEHO POČTU KROKOV
+                send(new_socket, "Zadajte max počet krokov: ",
+                     strlen("Zadajte max počet krokov: "), 0);
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                if (valread > 0) {
+                    buffer[valread] = '\0';
+                    pthread_mutex_lock(&conf->sim_c->mutex);
+                    conf->sim_c->pocetKrokov = atoi(buffer);
+                    printf("Max počet krokov: %d\n", conf->sim_c->pocetKrokov);
+                    pthread_mutex_unlock(&conf->sim_c->mutex);
+                }
+
+                // TU MôŽE ZAČAŤ S INICIALIZACIOU SERVERA
+
+            } else if (strcmp(buffer, "2") == 0 || strcmp(buffer, "STOP") == 0) {
+                send(new_socket, "Vypínam server!", strlen("Vypínam server!"), 0);
+                break;
+            } else {
+                send(new_socket, "Neznáma voľba, skúste znova.\n", strlen("Neznáma voľba, skúste znova.\n"), 0);
+            }
+        }
     }
-    valread = read(new_socket, buffer,
-                   1024 - 1); // subtract 1 for the null
-    // terminator at the end
-    printf("%s\n", buffer);
-    send(new_socket, hello, strlen(hello), 0);
-    printf("Hello message sent\n");
 
-    // closing the connected socket
+
+    // Zatvorenie socketu
     close(new_socket);
-    // closing the listening socket
     close(server_fd);
-    return 0;
 
+    return NULL;
 }
 
 void *simulationManager(void *arg) {
@@ -246,7 +399,14 @@ void *simulationManager(void *arg) {
             switch(smer) {
                 case 0: // hore
                     if (sim->op->y - 1 < 0) {
-                        break;
+                        if (sim->world[sim->op->x][DEFAULT_WORLD_SIZE -1] == 1) {
+                            break;
+                        } else {
+                            sim->world[sim->op->x][sim->op->y] = 0;
+                            sim->world[sim->op->x][DEFAULT_WORLD_SIZE] = 2;
+                            sim->op->y = DEFAULT_WORLD_SIZE - 1;
+                            sim->op->pocetPohybov++;
+                        }
                     } else if (sim->world[sim->op->x][sim->op->y-1] == 1) {
                         break;
                     } else {
@@ -258,7 +418,14 @@ void *simulationManager(void *arg) {
                     break;
                 case 1: // vpravo
                     if (sim->op->x + 1 >= DEFAULT_WORLD_SIZE) {
-                        break;
+                        if (sim->world[0][sim->op->y] == 1) {
+                            break;
+                        } else {
+                            sim->world[sim->op->x][sim->op->y] = 0;
+                            sim->world[0][sim->op->y] = 2;
+                            sim->op->x = 0;
+                            sim->op->pocetPohybov++;
+                        }
                     } else if (sim->world[sim->op->x+1][sim->op->y] == 1) {
                         break;
                     } else {
@@ -268,9 +435,17 @@ void *simulationManager(void *arg) {
                         sim->op->pocetPohybov++;
                     }
                     break;
+
                 case 2: // dole
                     if (sim->op->y + 1 >= DEFAULT_WORLD_SIZE) {
-                        break;
+                        if (sim->world[sim->op->x][0] == 1) {
+                            break;
+                        } else {
+                            sim->world[sim->op->x][sim->op->y] = 0;
+                            sim->world[sim->op->x][0] = 2;
+                            sim->op->y = 0;
+                            sim->op->pocetPohybov++;
+                        }
                     } else if (sim->world[sim->op->x][sim->op->y+1] == 1) {
                         break;
                     } else {
@@ -280,10 +455,18 @@ void *simulationManager(void *arg) {
                         sim->op->pocetPohybov++;
                     }
                     break;
+
                 case 3: // vľavo
 
                     if (sim->op->x - 1 < 0) {
-                        break;
+                        if (sim->world[DEFAULT_WORLD_SIZE - 1][sim->op->y] == 1) {
+                            break;
+                        } else {
+                            sim->world[sim->op->x][sim->op->y] = 0;
+                            sim->world[DEFAULT_WORLD_SIZE - 1][sim->op->y] = 2;
+                            sim->op->x = DEFAULT_WORLD_SIZE - 1;
+                            sim->op->pocetPohybov++;
+                        }
                     } else if (sim->world[sim->op->x-1][sim->op->y] == 1) {
                         break;
                     } else {
@@ -312,17 +495,13 @@ void *simulationManager(void *arg) {
 
 int main(int argc, char** argv) {
     srand(time(NULL));
-    if (argc < 2) {
-        printf("\nNezadal si číslo socektu!\n");
-        return -1;
-    }
     simulation sim;
     opilec opi;
     sim.op = &opi;
-    config sc = {.argc = argc, .argv = argv, .sim_c = &sim};
+    config sc = {.argc = argc, .argv = argv, .sim_c = &sim, .simulationName = "NaN"};
     pthread_mutex_init(&sim.mutex, NULL);
     initializeWorld(&sim, 1, 0);
-    sim.sim_state = RUNNING;
+    sim.sim_state = STOPPED;
     opi.chanceDown = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceUp = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceRight = DEFAULT_MOVEMENT_CHANCE;
@@ -332,7 +511,7 @@ int main(int argc, char** argv) {
     pthread_t simulationManagerT;
 
     pthread_create(&clientManager, NULL, &clientHandler, &sc );
-    pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
+    //pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
 
     pthread_join(simulationManagerT, NULL);
     pthread_join(clientManager, NULL);
