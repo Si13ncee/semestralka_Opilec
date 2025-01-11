@@ -100,7 +100,6 @@ void vypisSim(simulation* sim) {
 
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
 int initializeWorld(simulation* sim, int simType, int mode) {
-    //free(sim->world);
     sim->world = malloc(DEFAULT_WORLD_SIZE * sizeof(int*)); // Pole ukazovateľov na riadky
     for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
         sim->world[i] = malloc(DEFAULT_WORLD_SIZE * sizeof(int)); // Každý riadok
@@ -146,7 +145,11 @@ int initializeWorld(simulation* sim, int simType, int mode) {
 
             }
         }
+        for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
+            free(navstivene[i]);
+        }
         free(navstivene);
+
         sim->world[sim->op->x][sim->op->y] = 2;
     } else {
         printf("Zle zadaný vstup typu simulácie.\n");
@@ -158,7 +161,7 @@ int initializeWorld(simulation* sim, int simType, int mode) {
     return 0;
 }
 
-/*void *clientHandler(void *arg) {
+void *clientHandler(void *arg) {
     int server_fd, new_socket;
     ssize_t valread;
     struct sockaddr_in address;
@@ -215,7 +218,7 @@ int initializeWorld(simulation* sim, int simType, int mode) {
     close(server_fd);
     return 0;
 
-}*/
+}
 
 void *simulationManager(void *arg) {
     simulation *sim = (simulation*) arg;
@@ -319,7 +322,6 @@ int main(int argc, char** argv) {
     opi.chanceRight = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceLeft = DEFAULT_MOVEMENT_CHANCE;
 
-
     //pthread_t clientManager;
     pthread_t simulationManagerT;
 
@@ -327,7 +329,11 @@ int main(int argc, char** argv) {
     pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
 
     pthread_join(simulationManagerT, NULL);
+    for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
+        free(sim.world[i]);
+    }
     free(sim.world);
+    pthread_mutex_destroy(&sim.mutex);
 
     return 0;
 }
