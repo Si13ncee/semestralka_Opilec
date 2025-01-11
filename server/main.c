@@ -9,24 +9,34 @@
 #include <pthread.h>
 #include <time.h>
 
-#define DEFAULT_WORLD_SIZE 20
+#define DEFAULT_WORLD_SIZE 10
 #define DEFAULT_NUM_OF_REPLICATIONS 1000
 #define DEFAULT_MOVEMENT_CHANCE 25
 #define DEFAULT_BLOCKADE_CHANCE 50
 
+typedef enum { RUNNING, STOPPED, PAUSED } SimulationState;
+
+
 typedef struct {
     int x;
     int y;
+    int pocetPohybov;
+    int chanceUp;
+    int chanceRight;
+    int chanceLeft;
+    int chanceDown;
+
 } opilec;
 
 typedef struct {
     int** world; // 0- prázdne políčko; 1- prekážka; 2- opilec
-    //sem_t mutex;
-    sem_t canRun;
+    pthread_mutex_t mutex;
+    volatile SimulationState sim_state;
     int mode; // 0-interaktívny; 1-sumárny
     int simType; // 0- bez prekážok; 1- s prekážkami
     int NumOfReplications;
     opilec* op;
+
 } simulation;
 
 typedef struct {
@@ -67,6 +77,7 @@ int dfs(simulation* sim, int fromStartX, int fromStartY, opilec* op, int** navst
 }
 
 void vypisSim(simulation* sim) {
+    printf("\n");
     if(sim->mode == 0){ // interaktívny mód
         for (int row = 0; row < DEFAULT_WORLD_SIZE; row++) {
             for (int col = 0; col < DEFAULT_WORLD_SIZE; col++) {
@@ -79,15 +90,17 @@ void vypisSim(simulation* sim) {
             }
             printf("\n"); // Nový riadok pre každý riadok poľa
         }
-        printf("\nLegenda: \n. -> voľné miesto\n# -> prekážka\nX -> opilec");
+        printf("\nLegenda: \n. -> voľné miesto\n# -> prekážka\nX -> opilec\n");
+        printf("\nPočet pohybov Opilca: %d\n", sim->op->pocetPohybov);
     } else {
-        printf("Nesprávny mód!");
+        printf("\nNesprávny mód!\n");
         return;
     }
 }
 
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
 int initializeWorld(simulation* sim, int simType, int mode) {
+    //free(sim->world);
     sim->world = malloc(DEFAULT_WORLD_SIZE * sizeof(int*)); // Pole ukazovateľov na riadky
     for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
         sim->world[i] = malloc(DEFAULT_WORLD_SIZE * sizeof(int)); // Každý riadok
@@ -136,7 +149,7 @@ int initializeWorld(simulation* sim, int simType, int mode) {
         free(navstivene);
         sim->world[sim->op->x][sim->op->y] = 2;
     } else {
-        printf("Zle zadaný vstup typu simulácie.");
+        printf("Zle zadaný vstup typu simulácie.\n");
         return -1;
     }
 
@@ -207,13 +220,86 @@ int initializeWorld(simulation* sim, int simType, int mode) {
 void *simulationManager(void *arg) {
     simulation *sim = (simulation*) arg;
     while (1) {
-        // tu sa bude čakať, kým bude simulácia spustiteľná.
-        sem_wait(sim->canRun);
+
+        pthread_mutex_lock(&sim->mutex);
+
         //akonáhle príde správa od clientHandlera že je spustiteľná, tak sa začne vykonávať.
+        if(sim->sim_state == RUNNING) {
+            int chance = rand() % (sim->op->chanceDown + sim->op->chanceLeft + sim->op->chanceRight + sim->op->chanceUp);
+            int smer;
 
+            if (chance < sim->op->chanceUp) {
+                smer = 0;
+            } else if (chance < sim->op->chanceRight + sim->op->chanceUp) {
+                smer = 1;
+            } else if (chance < sim->op->chanceDown + sim->op->chanceRight + sim->op->chanceUp) {
+                smer = 2;
+            } else {
+                smer = 3;
+            }
 
+            switch(smer) {
+                case 0: // hore
+                    if (sim->op->y - 1 < 0) {
+                        break;
+                    } else if (sim->world[sim->op->x][sim->op->y-1] == 1) {
+                        break;
+                    } else {
+                        sim->world[sim->op->x][sim->op->y] = 0;
+                        sim->world[sim->op->x][sim->op->y-1] = 2;
+                        sim->op->y--;
+                        sim->op->pocetPohybov++;
+                    }
+                    break;
+                case 1: // vpravo
+                    if (sim->op->x + 1 >= DEFAULT_WORLD_SIZE) {
+                        break;
+                    } else if (sim->world[sim->op->x+1][sim->op->y] == 1) {
+                        break;
+                    } else {
+                        sim->world[sim->op->x][sim->op->y] = 0;
+                        sim->world[sim->op->x+1][sim->op->y] = 2;
+                        sim->op->x++;
+                        sim->op->pocetPohybov++;
+                    }
+                    break;
+                case 2: // dole
+                    if (sim->op->y + 1 >= DEFAULT_WORLD_SIZE) {
+                        break;
+                    } else if (sim->world[sim->op->x][sim->op->y+1] == 1) {
+                        break;
+                    } else {
+                        sim->world[sim->op->x][sim->op->y] = 0;
+                        sim->world[sim->op->x][sim->op->y+1] = 2;
+                        sim->op->y++;
+                        sim->op->pocetPohybov++;
+                    }
+                    break;
+                case 3: // vľavo
 
-        break;
+                    if (sim->op->x - 1 < 0) {
+                        break;
+                    } else if (sim->world[sim->op->x-1][sim->op->y] == 1) {
+                        break;
+                    } else {
+                        sim->world[sim->op->x][sim->op->y] = 0;
+                        sim->world[sim->op->x-1][sim->op->y] = 2;
+                        sim->op->x--;
+                        sim->op->pocetPohybov++;
+                    }
+                    break;
+            }
+            vypisSim(sim);
+            if(sim->op->x == 0 && sim->op->y == 0) {
+                sim->sim_state = STOPPED;
+            }
+            pthread_mutex_unlock(&sim->mutex);
+        }
+        if (sim->sim_state == STOPPED) {
+            printf("Simulácia bola ukončená.\n");
+            pthread_mutex_unlock(&sim->mutex);
+            break;
+        }
 
     }
 }
@@ -225,15 +311,22 @@ int main(int argc, char** argv) {
     opilec opi;
     sim.op = &opi;
     config sc = {.argc = argc, .argv = argv, .sim_c = &sim};
+    pthread_mutex_init(&sim.mutex, NULL);
     initializeWorld(&sim, 1, 0);
+    sim.sim_state = RUNNING;
+    opi.chanceDown = DEFAULT_MOVEMENT_CHANCE;
+    opi.chanceUp = DEFAULT_MOVEMENT_CHANCE;
+    opi.chanceRight = DEFAULT_MOVEMENT_CHANCE;
+    opi.chanceLeft = DEFAULT_MOVEMENT_CHANCE;
 
-    pthread_t clientManager;
+
+    //pthread_t clientManager;
     pthread_t simulationManagerT;
 
     //pthread_create(&clientManager, NULL, &clientHandler, &sc );
-    //pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
+    pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
 
-    pthread_join(clientManager, NULL);
+    pthread_join(simulationManagerT, NULL);
     free(sim.world);
 
     return 0;
