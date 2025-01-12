@@ -41,7 +41,7 @@ int main() {
         valread = read(sock, buffer, sizeof(buffer) - 1); // -1 pre null terminátor
         if (valread >= 0) {
             buffer[valread] = '\0'; // Pridanie null terminátora na koniec správy
-            printf("Odpoveď od serveru: %s\n", buffer);
+            printf("%s\n", buffer);
         } else {
             perror("read failed");
             break;
@@ -49,7 +49,6 @@ int main() {
 
         // Kontrola na príkaz zo strany klienta
         char input[100];
-        printf("Zadaj príkaz (STOP na ukončenie): ");
         fgets(input, sizeof(input), stdin);
         input[strcspn(input, "\n")] = 0; // Odstránenie nového riadku na konci
 

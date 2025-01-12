@@ -1,4 +1,3 @@
-#include <semaphore.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,8 +8,6 @@
 #include <pthread.h>
 #include <time.h>
 
-#define DEFAULT_WORLD_SIZE 10
-#define DEFAULT_NUM_OF_REPLICATIONS 1000
 #define DEFAULT_MOVEMENT_CHANCE 25
 #define DEFAULT_BLOCKADE_CHANCE 50
 #define PORT 10023
@@ -19,6 +16,8 @@ typedef enum { RUNNING, STOPPED, PAUSED } SimulationState;
 
 
 typedef struct {
+    int OriginalX;
+    int OriginalY;
     int x;
     int y;
     int pocetPohybov;
@@ -26,18 +25,23 @@ typedef struct {
     int chanceRight;
     int chanceLeft;
     int chanceDown;
-
 } opilec;
 
 typedef struct {
+    int** worldOriginal; // 0- prázdne políčko; 1- prekážka; 2- opilec
     int** world; // 0- prázdne políčko; 1- prekážka; 2- opilec
     pthread_mutex_t mutex;
     volatile SimulationState sim_state;
     int mode; // 0-interaktívny; 1-sumárny
     int simType; // 0- bez prekážok; 1- s prekážkami
     int NumOfReplications;
+    int pocetSpravenychReplikacii;
     opilec* op;
-    int pocetKrokov;
+    int maxPocetKrokov;
+    int rozmerX;
+    int rozmerY;
+    int failed;
+    int success;
 } simulation;
 
 typedef struct {
@@ -46,17 +50,26 @@ typedef struct {
     simulation* sim_c;
 
     char simulationName[100];
-    int rozmerX;
-    int rozmerY;
+
 } config;
 
-int pointInBounds(int x, int y) {
-    return x >= 0 && x < DEFAULT_WORLD_SIZE && y >= 0 && y < DEFAULT_WORLD_SIZE;
+void reinitializeWorldForReplication(simulation *sim) {
+    for (int i = 0; i < sim->rozmerX; i++) {
+        memcpy(sim->world[i], sim->worldOriginal[i], sim->rozmerY * sizeof(int));
+    }
+
+    sim->op->x = sim->op->OriginalX;
+    sim->op->y = sim->op->OriginalY;
+
+}
+
+int pointInBounds(int x, int y, int maxX, int maxY) {
+    return x >= 0 && x < maxX && y >= 0 && y < maxY;
 }
 
 int dfs(simulation* sim, int fromStartX, int fromStartY, opilec* op, int** navstivene) {
     // Ak sme mimo mapy, na prekážke alebo už navštívení
-    if (!pointInBounds(fromStartX, fromStartY) || sim->world[fromStartX][fromStartY] == 1 || navstivene[fromStartX][fromStartY] == 1) {
+    if (!pointInBounds(fromStartX, fromStartY, sim->rozmerX, sim->rozmerY) || sim->world[fromStartX][fromStartY] == 1 || navstivene[fromStartX][fromStartY] == 1) {
         return 0;
     }
 
@@ -84,8 +97,8 @@ int dfs(simulation* sim, int fromStartX, int fromStartY, opilec* op, int** navst
 void vypisSim(simulation* sim) {
     printf("\n");
     if(sim->mode == 0){ // interaktívny mód
-        for (int row = 0; row < DEFAULT_WORLD_SIZE; row++) {
-            for (int col = 0; col < DEFAULT_WORLD_SIZE; col++) {
+        for (int row = 0; row < sim->rozmerX; row++) {
+            for (int col = 0; col < sim->rozmerY; col++) {
                 if (sim->world[row][col] == 0)
                     printf(".  "); // prázdne miesto
                 if (sim->world[row][col] == 1)
@@ -104,40 +117,50 @@ void vypisSim(simulation* sim) {
 }
 
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
-int initializeWorld(simulation* sim, int simType, int mode) {
-    sim->world = malloc(DEFAULT_WORLD_SIZE * sizeof(int*)); // Pole ukazovateľov na riadky
-    for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
-        sim->world[i] = malloc(DEFAULT_WORLD_SIZE * sizeof(int)); // Každý riadok
+int initializeWorld(simulation* sim) {
+    sim->failed = 0;
+    sim->success = 0;
+    //printf("Debug: Začínam alokovať svet.\n");
+    sim->world = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
+    for (int i = 0; i < sim->rozmerX; i++) {
+        sim->world[i] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
     }
 
-    //sem_init(sim->canRun, 0, 1);
-    sim->NumOfReplications = DEFAULT_NUM_OF_REPLICATIONS;
-    sim->simType = simType;
-    sim->mode = mode;
+    sim->worldOriginal = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
+    for (int i = 0; i < sim->rozmerX; i++) {
+        sim->worldOriginal[i] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
+    }
+    //printf("Debug: Končím alokovať svet.\n");
 
-    sim->op->x = rand() % DEFAULT_WORLD_SIZE;
-    sim->op->y = rand() % DEFAULT_WORLD_SIZE;
+    sim->op->x = rand() % sim->rozmerX;
+    sim->op->y = rand() % sim->rozmerY;
 
-    if (simType == 0) { // setup bez prekážok
-        for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
-            for (int j = 0; j < DEFAULT_WORLD_SIZE; j++) {
+    sim->op->OriginalX = sim->op->x;
+    sim->op->OriginalY = sim->op->y;
+
+    //printf("Debug: Začínam setupovať svet.\n");
+    if (sim->simType == 0) { // setup bez prekážok
+        for (int i = 0; i < sim->rozmerX; i++) {
+            for (int j = 0; j < sim->rozmerY; j++) {
                 sim->world[i][j] = 0;
+                sim->worldOriginal[i][j] = 0;
             }
         }
         sim->world[sim->op->x][sim->op->y] = 2;
+        sim->worldOriginal[sim->op->x][sim->op->y] = 2;
 
-    } else if (simType == 1) { // setup s prekážkami
-        int** navstivene = malloc(DEFAULT_WORLD_SIZE * sizeof(int*)); // Pole ukazovateľov na riadky
-        for (int s = 0; s < DEFAULT_WORLD_SIZE; s++) {
-            navstivene[s] = malloc(DEFAULT_WORLD_SIZE * sizeof(int)); // Každý riadok
+    } else if (sim->simType == 1) { // setup s prekážkami
+        int** navstivene = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
+        for (int s = 0; s < sim->rozmerY; s++) {
+            navstivene[s] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
         }
 
 
-        for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
-            for (int j = 0; j < DEFAULT_WORLD_SIZE; j++) {
+        for (int i = 0; i < sim->rozmerX; i++) {
+            for (int j = 0; j < sim->rozmerY; j++) {
 
-                for (int k = 0; k < DEFAULT_WORLD_SIZE; k++) {
-                    for (int l = 0; l < DEFAULT_WORLD_SIZE; l++) {
+                for (int k = 0; k < sim->rozmerX; k++) {
+                    for (int l = 0; l < sim->rozmerY; l++) {
                         navstivene[k][l] = 0;
                     }
                 }
@@ -150,7 +173,7 @@ int initializeWorld(simulation* sim, int simType, int mode) {
 
             }
         }
-        for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
+        for (int i = 0; i < sim->rozmerX; i++) {
             free(navstivene[i]);
         }
         free(navstivene);
@@ -160,6 +183,8 @@ int initializeWorld(simulation* sim, int simType, int mode) {
         printf("Zle zadaný vstup typu simulácie.\n");
         return -1;
     }
+
+    //printf("Debug: Skončil som setup sveta.\n");
 
     vypisSim(sim);
 
@@ -176,7 +201,6 @@ void *clientHandler(void *arg) {
     int opt = 1;
     socklen_t addrlen = sizeof(address);
     char buffer[1024] = { 0 };
-    char* hello = "Hello from server";
 
 
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -231,7 +255,6 @@ void *clientHandler(void *arg) {
 
             buffer[valread] = '\0'; // Pridanie null terminátora
             printf("Správa od klienta: %s\n", buffer);
-
             if (strcmp(buffer, "1") == 0) {
 
                 // ZADANIE NÁZVU SIMULÁCIE
@@ -268,8 +291,8 @@ void *clientHandler(void *arg) {
                 if (valread > 0) {
                     buffer[valread] = '\0';
                     pthread_mutex_lock(&conf->sim_c->mutex);
-                    conf->rozmerX = atoi(buffer);
-                    printf("Rozmer mapy X: %d\n", conf->rozmerX);
+                    conf->sim_c->rozmerX = atoi(buffer);
+                    printf("Rozmer mapy X: %d\n", conf->sim_c->rozmerX);
                     pthread_mutex_unlock(&conf->sim_c->mutex);
                 }
                 send(new_socket, "Zadajte rozmer mapy Y: ",
@@ -279,13 +302,14 @@ void *clientHandler(void *arg) {
                 if (valread > 0) {
                     buffer[valread] = '\0';
                     pthread_mutex_lock(&conf->sim_c->mutex);
-                    conf->rozmerY = atoi(buffer);
-                    printf("Rozmer mapy Y: %d\n", conf->rozmerY);
+                    conf->sim_c->rozmerY = atoi(buffer);
+                    printf("Rozmer mapy Y: %d\n", conf->sim_c->rozmerY);
                     pthread_mutex_unlock(&conf->sim_c->mutex);
                 }
 
+                // ZADANIE Pravdepodobnosti
                 while(1) {
-                    // ZADANIE Pravdepodobnosti
+
                     send(new_socket, "Zadajte pravdepodobnosť pohybu Hore: ",
                          strlen("Zadajte pravdepodobnosť pohybu Hore: "), 0);
                     memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
@@ -351,19 +375,42 @@ void *clientHandler(void *arg) {
                 if (valread > 0) {
                     buffer[valread] = '\0';
                     pthread_mutex_lock(&conf->sim_c->mutex);
-                    conf->sim_c->pocetKrokov = atoi(buffer);
-                    printf("Max počet krokov: %d\n", conf->sim_c->pocetKrokov);
+                    conf->sim_c->maxPocetKrokov = atoi(buffer);
+                    printf("Max počet krokov: %d\n", conf->sim_c->maxPocetKrokov);
                     pthread_mutex_unlock(&conf->sim_c->mutex);
                 }
 
-                // TU MôŽE ZAČAŤ S INICIALIZACIOU SERVERA
+                // ZADANIE TYPU SIMULACIE
+                send(new_socket, "Zadajte typ simulácie \n[1.] Bez prekážok\n[2.] S prekážkami: ",
+                     strlen("Zadajte typ simulácie \n[1.] Bez prekážok\n[2.] S prekážkami: "), 0);
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                if (valread > 0) {
+                    buffer[valread] = '\0';
+                    pthread_mutex_lock(&conf->sim_c->mutex);
+                    conf->sim_c->simType = atoi(buffer);
+                    printf("Typ simulácie: %d\n", conf->sim_c->simType);
+                    pthread_mutex_unlock(&conf->sim_c->mutex);
+                }
 
-            } else if (strcmp(buffer, "2") == 0 || strcmp(buffer, "STOP") == 0) {
+                    // TU MôŽE ZAČAŤ S INICIALIZACIOU SIMULACIE
+                    printf("Debug: Začínam inicializovať svet.\n");
+                    initializeWorld(conf->sim_c);
+                    conf->sim_c->sim_state = RUNNING;
+
+
+
+            } else if (strcmp(buffer, "STOP") == 0) {
                 send(new_socket, "Vypínam server!", strlen("Vypínam server!"), 0);
+                conf->sim_c->sim_state = STOPPED;
+                printf("Vypínam server!\n");
                 break;
             } else {
                 send(new_socket, "Neznáma voľba, skúste znova.\n", strlen("Neznáma voľba, skúste znova.\n"), 0);
             }
+        }
+        if (strcmp(buffer, "STOP") == 0) {
+            break;
         }
     }
 
@@ -377,6 +424,8 @@ void *clientHandler(void *arg) {
 
 void *simulationManager(void *arg) {
     simulation *sim = (simulation*) arg;
+
+    sim->pocetSpravenychReplikacii = 0;
     while (1) {
 
         pthread_mutex_lock(&sim->mutex);
@@ -399,12 +448,12 @@ void *simulationManager(void *arg) {
             switch(smer) {
                 case 0: // hore
                     if (sim->op->y - 1 < 0) {
-                        if (sim->world[sim->op->x][DEFAULT_WORLD_SIZE -1] == 1) {
+                        if (sim->world[sim->op->x][ -1] == 1) {
                             break;
                         } else {
                             sim->world[sim->op->x][sim->op->y] = 0;
-                            sim->world[sim->op->x][DEFAULT_WORLD_SIZE] = 2;
-                            sim->op->y = DEFAULT_WORLD_SIZE - 1;
+                            sim->world[sim->op->x][sim->rozmerY - 1] = 2;
+                            sim->op->y = sim->rozmerY - 1;
                             sim->op->pocetPohybov++;
                         }
                     } else if (sim->world[sim->op->x][sim->op->y-1] == 1) {
@@ -417,7 +466,7 @@ void *simulationManager(void *arg) {
                     }
                     break;
                 case 1: // vpravo
-                    if (sim->op->x + 1 >= DEFAULT_WORLD_SIZE) {
+                    if (sim->op->x + 1 >= sim->rozmerX) {
                         if (sim->world[0][sim->op->y] == 1) {
                             break;
                         } else {
@@ -437,7 +486,7 @@ void *simulationManager(void *arg) {
                     break;
 
                 case 2: // dole
-                    if (sim->op->y + 1 >= DEFAULT_WORLD_SIZE) {
+                    if (sim->op->y + 1 >= sim->rozmerY) {
                         if (sim->world[sim->op->x][0] == 1) {
                             break;
                         } else {
@@ -459,12 +508,12 @@ void *simulationManager(void *arg) {
                 case 3: // vľavo
 
                     if (sim->op->x - 1 < 0) {
-                        if (sim->world[DEFAULT_WORLD_SIZE - 1][sim->op->y] == 1) {
+                        if (sim->world[sim->rozmerX - 1][sim->op->y] == 1) {
                             break;
                         } else {
                             sim->world[sim->op->x][sim->op->y] = 0;
-                            sim->world[DEFAULT_WORLD_SIZE - 1][sim->op->y] = 2;
-                            sim->op->x = DEFAULT_WORLD_SIZE - 1;
+                            sim->world[sim->rozmerX - 1][sim->op->y] = 2;
+                            sim->op->x = sim->rozmerX - 1;
                             sim->op->pocetPohybov++;
                         }
                     } else if (sim->world[sim->op->x-1][sim->op->y] == 1) {
@@ -477,9 +526,35 @@ void *simulationManager(void *arg) {
                     }
                     break;
             }
-            vypisSim(sim);
-            if(sim->op->x == 0 && sim->op->y == 0) {
-                sim->sim_state = STOPPED;
+
+            if(sim->op->x == 0 && sim->op->y == 0 || sim->maxPocetKrokov == sim->op->pocetPohybov) {
+                if (sim->pocetSpravenychReplikacii == sim->NumOfReplications) {
+                    for (int i = 0; i < sim->rozmerX; i++) {
+                        free(sim->world[i]);
+                    }
+                    free(sim->world);
+
+                    printf("\nSimulácia sa ukončila!\nPočet úspešných replikácií: %d", sim->success);
+                    printf("\nPočet neúspešných replikácií: %d\n", sim->failed);
+                    sim->sim_state = PAUSED;
+                    sim->pocetSpravenychReplikacii = 0;
+                    sim->op->pocetPohybov = 0;
+                } else {
+                    if (!(sim->op->x == 0 && sim->op->y == 0)) {
+                        printf("\n!!Opilcovi sa nepodarilo dostať domov. Odpadol niekde na ulici!!\n");
+                        sim->failed++;
+                    } else {
+                        printf("\nOpilcovi sa podarilo dostať domov! Spravil len %d krokov!\n", sim->op->pocetPohybov);
+                        sim->success++;
+                    }
+                    printf("\nDEBUG: REINICIALIZUJEM SVET!!!!");
+                    printf("\nDEBUG: pozicia opilcaX: %d", sim->op->x);
+                    printf("\nDEBUG: pozicia opilcaY: %d", sim->op->y);
+                    sim->op->pocetPohybov = 0;
+                    reinitializeWorldForReplication(sim);
+                    sim->pocetSpravenychReplikacii++;
+                }
+
             }
             pthread_mutex_unlock(&sim->mutex);
         }
@@ -488,9 +563,11 @@ void *simulationManager(void *arg) {
             pthread_mutex_unlock(&sim->mutex);
             break;
         }
+        pthread_mutex_unlock(&sim->mutex);
 
     }
 }
+
 
 
 int main(int argc, char** argv) {
@@ -500,8 +577,7 @@ int main(int argc, char** argv) {
     sim.op = &opi;
     config sc = {.argc = argc, .argv = argv, .sim_c = &sim, .simulationName = "NaN"};
     pthread_mutex_init(&sim.mutex, NULL);
-    initializeWorld(&sim, 1, 0);
-    sim.sim_state = STOPPED;
+    sim.sim_state = PAUSED;
     opi.chanceDown = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceUp = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceRight = DEFAULT_MOVEMENT_CHANCE;
@@ -511,12 +587,12 @@ int main(int argc, char** argv) {
     pthread_t simulationManagerT;
 
     pthread_create(&clientManager, NULL, &clientHandler, &sc );
-    //pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
+    pthread_create(&simulationManagerT, NULL, &simulationManager, &sim);
 
     pthread_join(simulationManagerT, NULL);
     pthread_join(clientManager, NULL);
 
-    for (int i = 0; i < DEFAULT_WORLD_SIZE; i++) {
+    for (int i = 0; i < sim.rozmerX; i++) {
         free(sim.world[i]);
     }
     free(sim.world);
