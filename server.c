@@ -29,7 +29,6 @@ typedef struct {
     int chanceRight;
     int chanceLeft;
     int chanceDown;
-    char simulationName[100];
 } opilec;
 
 typedef struct {
@@ -55,42 +54,10 @@ typedef struct {
     int argc;
     char** argv;
     simulation* sim_c;
-
-
 } config;
 
 void vypisSim(simulation* sim);
 void saveToFile(simulation *sim);
-void loadFromFile();
-
-void vypisSouboryKlientovi(int clientSocket) {
-    char* folderName = "svety";
-    DIR* dir = opendir(folderName);
-    if (dir == NULL) {
-        perror("Nepodarilo sa otvoriť adresár");
-        send(clientSocket, "Nepodarilo sa otvoriť adresár svety/\n", strlen("Nepodarilo sa otvoriť adresár svety/\n"), 0);
-        return;
-    }
-
-    struct dirent* entry;
-    char buffer[1024];
-    buffer[0] = '\0'; // Inicializácia bufferu pre správu klientovi
-
-    strcat(buffer, "Zoznam súborov v adresári svety/:\n");
-
-    while ((entry = readdir(dir)) != NULL) {
-        // Ignoruj "." a ".."
-        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
-            strcat(buffer, entry->d_name);
-            strcat(buffer, "\n");
-        }
-    }
-
-    closedir(dir);
-
-    // Poslanie zoznamu klientovi
-    send(clientSocket, buffer, strlen(buffer), 0);
-}
 
 void reinitializeWorldForReplication(simulation *sim) {
     for (int i = 0; i < sim->rozmerX; i++) {
