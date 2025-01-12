@@ -11,6 +11,7 @@ int main() {
     struct sockaddr_in serv_addr;
     char buffer[1024] = {0};
     char stop_command[] = "STOP";
+    char stop_command2[] = "C";
 
     // Vytvorenie soketu
     if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -52,7 +53,7 @@ int main() {
         fgets(input, sizeof(input), stdin);
         input[strcspn(input, "\n")] = 0; // Odstránenie nového riadku na konci
 
-        if (strcmp(input, stop_command) == 0) {
+        if (strcmp(input, stop_command) == 0 || strcmp(input, stop_command2) == 0) {
             printf("Ukončujem spojenie.\n");
             send(sock, input, strlen(input), 0);
             break;

@@ -290,7 +290,7 @@ void *clientHandler(void *arg) {
         // Kontinuálna komunikácia
         while (1) {
             memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
-            send(new_socket, "Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciu zo súboru\n [4.] Vy", strlen("Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciu zo súboru\n"), 0);
+            send(new_socket, "Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciu zo súboru\n [STOP] Vypni server \n [C] Vypni clienta", strlen("Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciu zo súboru\n [STOP] Vypni server \n [C] Vypni clienta"), 0);
 
             valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0); // Čítanie dát od klienta
             if (valread <= 0) {
@@ -575,11 +575,8 @@ void *clientHandler(void *arg) {
                 fscanf(file, "%d", &conf->sim_c->op->chanceDown);
                 fscanf(file, "%d", &conf->sim_c->op->chanceLeft);
 
-                if (fgets(line, sizeof(line), file) != NULL) {
-                    // Vypísanie riadku, ktorý bol práve načítaný
-                    printf("Načítaný riadok: %s", line);
-                } else {
-                    printf("Nepodarilo sa načítať riadok.\n");
+                for (int riadok = 0; riadok < 3; riadok++) {
+                    fgets(line, sizeof(line), file);
                 }
 
                 if (conf->sim_c->alokovane == 1) {
@@ -852,6 +849,9 @@ void saveToFile(simulation *sim) {
     fprintf(file, "%d\n", sim->op->chanceRight);
     fprintf(file, "%d\n", sim->op->chanceDown);
     fprintf(file, "%d\n", sim->op->chanceLeft);
+
+    fprintf(file, "Úspechov: %d\n", sim->success);
+    fprintf(file, "Neúspechov: %d\n", sim->failed);
 
 
 
