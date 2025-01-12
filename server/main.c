@@ -290,7 +290,7 @@ void *clientHandler(void *arg) {
         // Kontinuálna komunikácia
         while (1) {
             memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
-            send(new_socket, "Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciui zo súboru\n", strlen("Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciui zo súboru\n"), 0);
+            send(new_socket, "Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciu zo súboru\n [4.] Vy", strlen("Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciu zo súboru\n"), 0);
 
             valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0); // Čítanie dát od klienta
             if (valread <= 0) {
@@ -570,6 +570,11 @@ void *clientHandler(void *arg) {
                 fscanf(file, "%d", &conf->sim_c->op->OriginalX);
                 fscanf(file, "%d", &conf->sim_c->op->OriginalY);
 
+                fscanf(file, "%d", &conf->sim_c->op->chanceUp);
+                fscanf(file, "%d", &conf->sim_c->op->chanceRight);
+                fscanf(file, "%d", &conf->sim_c->op->chanceDown);
+                fscanf(file, "%d", &conf->sim_c->op->chanceLeft);
+
                 if (fgets(line, sizeof(line), file) != NULL) {
                     // Vypísanie riadku, ktorý bol práve načítaný
                     printf("Načítaný riadok: %s", line);
@@ -643,12 +648,9 @@ void *clientHandler(void *arg) {
                 fclose(file);
                 conf->sim_c->pocetSpravenychReplikacii = 0;
                 conf->sim_c->sim_state = RUNNING;
-                printf("DEBUG: INICIALIZUJEM REPLIKÁCIU");
                 printf("RozmerX = %d", conf->sim_c->rozmerX);
                 printf("RozmerY = %d", conf->sim_c->rozmerY);
                 reinitializeWorldForReplication(conf->sim_c);
-                printf("DEBUG: DOKONČIL SOM INICIALIZACIU REPLIKACIE REPLIKÁCIU");
-
                 pthread_mutex_unlock(&conf->sim_c->mutex);
             }
             else {
@@ -845,6 +847,12 @@ void saveToFile(simulation *sim) {
     fprintf(file, "%d\n", sim->rozmerY);
     fprintf(file, "%d\n", sim->op->OriginalX);
     fprintf(file, "%d\n", sim->op->OriginalY);
+
+    fprintf(file, "%d\n", sim->op->chanceUp);
+    fprintf(file, "%d\n", sim->op->chanceRight);
+    fprintf(file, "%d\n", sim->op->chanceDown);
+    fprintf(file, "%d\n", sim->op->chanceLeft);
+
 
 
     // Zápis matice worldOriginal
