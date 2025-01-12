@@ -124,25 +124,25 @@ void vypisSim(simulation* sim) {
 
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
 int initializeWorld(simulation* sim) {
-    printf("Alokovane: %d", sim->alokovane);
+    printf("Dostal som sa sem");
     if (sim->alokovane == 0) {
         sim->alokovane = 1;
-        sim->world = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
+        sim->world = calloc(sim->rozmerX, sizeof(int*));
         for (int i = 0; i < sim->rozmerX; i++) {
-            sim->world[i] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
+            sim->world[i] = calloc(sim->rozmerY, sizeof(int));
         }
 
-        sim->worldOriginal = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
+        sim->worldOriginal = calloc(sim->rozmerX, sizeof(int*));
         for (int i = 0; i < sim->rozmerX; i++) {
-            sim->worldOriginal[i] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
+            sim->worldOriginal[i] = calloc(sim->rozmerY, sizeof(int));
         }
+
         printf("DEBUG: ÚSPESNE SOM ALOKOVAL SVET!");
-    } else {
-        for (int i = 0; i < sim->rozmerX; i++) {
-            for (int j = 0; j < sim->rozmerY; j++) {
-                sim->world[i][j] = 0;
-                sim->worldOriginal[i][j] = 0;
-            }
+    }
+    for (int i = 0; i < sim->rozmerX; i++) {
+        for (int j = 0; j < sim->rozmerY; j++) {
+            sim->world[i][j] = 0;
+            sim->worldOriginal[i][j] = 0;
         }
     }
     sim->failed = 0;
@@ -287,6 +287,7 @@ void *clientHandler(void *arg) {
                     pthread_mutex_unlock(&conf->sim_c->mutex);
                 }
 
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                 // ZADANIE POČTU REPLIKÁCIÍ
                 send(new_socket, "Zadajte počet replikácií simulácie: ",
                      strlen("Zadajte počet replikácií simulácie: "), 0);
@@ -300,6 +301,7 @@ void *clientHandler(void *arg) {
                     pthread_mutex_unlock(&conf->sim_c->mutex);
                 }
 
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                 // ZADANIE ROZMEROV
                 send(new_socket, "Zadajte rozmer mapy X: ",
                      strlen("Zadajte rozmer mapy X: "), 0);
@@ -312,6 +314,7 @@ void *clientHandler(void *arg) {
                     printf("Rozmer mapy X: %d\n", conf->sim_c->rozmerX);
                     pthread_mutex_unlock(&conf->sim_c->mutex);
                 }
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                 send(new_socket, "Zadajte rozmer mapy Y: ",
                      strlen("Zadajte rozmer mapy Y: "), 0);
                 memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
@@ -327,6 +330,7 @@ void *clientHandler(void *arg) {
                 // ZADANIE Pravdepodobnosti
                 while(1) {
 
+                    memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                     send(new_socket, "Zadajte pravdepodobnosť pohybu Hore: ",
                          strlen("Zadajte pravdepodobnosť pohybu Hore: "), 0);
                     memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
@@ -339,6 +343,7 @@ void *clientHandler(void *arg) {
                         pthread_mutex_unlock(&conf->sim_c->mutex);
                     }
 
+                    memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                     send(new_socket, "Zadajte pravdepodobnosť pohybu Vpravo: ",
                          strlen("Zadajte pravdepodobnosť pohybu Vpravo: "), 0);
                     memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
@@ -351,6 +356,7 @@ void *clientHandler(void *arg) {
                         pthread_mutex_unlock(&conf->sim_c->mutex);
                     }
 
+                    memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                     send(new_socket, "Zadajte pravdepodobnosť pohybu Dole: ",
                          strlen("Zadajte pravdepodobnosť pohybu Dole: "), 0);
                     memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
@@ -363,6 +369,7 @@ void *clientHandler(void *arg) {
                         pthread_mutex_unlock(&conf->sim_c->mutex);
                     }
 
+                    memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                     send(new_socket, "Zadajte pravdepodobnosť pohybu Vľavo: ",
                          strlen("Zadajte pravdepodobnosť pohybu Vľavo: "), 0);
                     memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
@@ -384,6 +391,7 @@ void *clientHandler(void *arg) {
                     }
                 }
 
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                 // ZADANIE MAXIMÁLNEHO POČTU KROKOV
                 send(new_socket, "Zadajte max počet krokov: ",
                      strlen("Zadajte max počet krokov: "), 0);
@@ -397,6 +405,7 @@ void *clientHandler(void *arg) {
                     pthread_mutex_unlock(&conf->sim_c->mutex);
                 }
 
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                 // ZADANIE TYPU SIMULACIE
                 send(new_socket, "Zadajte typ simulácie \n[0.] Bez prekážok\n[1.] S prekážkami: ",
                      strlen("Zadajte typ simulácie \n[0.] Bez prekážok\n[1.] S prekážkami: "), 0);
@@ -410,10 +419,16 @@ void *clientHandler(void *arg) {
                     pthread_mutex_unlock(&conf->sim_c->mutex);
                 }
 
+                    memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                     // TU MôŽE ZAČAŤ S INICIALIZACIOU SIMULACIE
                     printf("Debug: Začínam inicializovať svet.\n");
+                    printf("Debug: Alokacia: %d.\n", conf->sim_c->alokovane);
+                    printf("Debug: RozmerX: %d.\n", conf->sim_c->rozmerX);
+                    printf("Debug: RozmerY: %d.\n", conf->sim_c->rozmerY);
+                    pthread_mutex_lock(&conf->sim_c->mutex);
                     initializeWorld(conf->sim_c);
                     conf->sim_c->sim_state = RUNNING;
+                    pthread_mutex_unlock(&conf->sim_c->mutex);
 
 
 
@@ -846,13 +861,12 @@ int main(int argc, char** argv) {
     sim.op = &opi;
     config sc = {.argc = argc, .argv = argv, .sim_c = &sim};
     pthread_mutex_init(&sim.mutex, NULL);
-    sim.alokovane = 0;
     sim.sim_state = PAUSED;
     opi.chanceDown = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceUp = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceRight = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceLeft = DEFAULT_MOVEMENT_CHANCE;
-
+    sim.alokovane = 0;
     pthread_t clientManager;
     pthread_t simulationManagerT;
 
@@ -861,6 +875,7 @@ int main(int argc, char** argv) {
 
     pthread_join(simulationManagerT, NULL);
     pthread_join(clientManager, NULL);
+
 
     if (sim.alokovane != 0) {
         for (int i = 0; i < sim.rozmerX; i++) {
@@ -871,9 +886,9 @@ int main(int argc, char** argv) {
         for (int i = 0; i < sim.rozmerX; i++) {
             free(sim.worldOriginal[i]);
         }
+        free(sim.worldOriginal);
     }
 
-    free(sim.worldOriginal);
     pthread_mutex_destroy(&sim.mutex);
 
     return 0;
