@@ -124,6 +124,7 @@ void vypisSim(simulation* sim) {
 
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
 int initializeWorld(simulation* sim) {
+    printf("Alokovane: %d", sim->alokovane);
     if (sim->alokovane == 0) {
         sim->alokovane = 1;
         sim->world = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
@@ -135,6 +136,7 @@ int initializeWorld(simulation* sim) {
         for (int i = 0; i < sim->rozmerX; i++) {
             sim->worldOriginal[i] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
         }
+        printf("DEBUG: ÚSPESNE SOM ALOKOVAL SVET!");
     } else {
         for (int i = 0; i < sim->rozmerX; i++) {
             for (int j = 0; j < sim->rozmerY; j++) {
@@ -844,6 +846,7 @@ int main(int argc, char** argv) {
     sim.op = &opi;
     config sc = {.argc = argc, .argv = argv, .sim_c = &sim};
     pthread_mutex_init(&sim.mutex, NULL);
+    sim.alokovane = 0;
     sim.sim_state = PAUSED;
     opi.chanceDown = DEFAULT_MOVEMENT_CHANCE;
     opi.chanceUp = DEFAULT_MOVEMENT_CHANCE;
@@ -859,14 +862,17 @@ int main(int argc, char** argv) {
     pthread_join(simulationManagerT, NULL);
     pthread_join(clientManager, NULL);
 
-    for (int i = 0; i < sim.rozmerX; i++) {
-        free(sim.world[i]);
-    }
-    free(sim.world);
+    if (sim.alokovane != 0) {
+        for (int i = 0; i < sim.rozmerX; i++) {
+            free(sim.world[i]);
+        }
+        free(sim.world);
 
-    for (int i = 0; i < sim.rozmerX; i++) {
-        free(sim.worldOriginal[i]);
+        for (int i = 0; i < sim.rozmerX; i++) {
+            free(sim.worldOriginal[i]);
+        }
     }
+
     free(sim.worldOriginal);
     pthread_mutex_destroy(&sim.mutex);
 
