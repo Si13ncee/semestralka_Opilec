@@ -58,7 +58,6 @@ typedef struct {
 
 void vypisSim(simulation* sim);
 void saveToFile(simulation *sim);
-
 void reinitializeWorldForReplication(simulation *sim) {
     for (int i = 0; i < sim->rozmerX; i++) {
         memcpy(sim->world[i], sim->worldOriginal[i], sim->rozmerY * sizeof(int));
