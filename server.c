@@ -656,8 +656,8 @@ void *simulationManager(void *arg) {
     sim->pocetSpravenychReplikacii = 0;
     while (1) {
 
-        pthread_mutex_lock(&sim->mutex);
 
+        pthread_mutex_lock(&sim->mutex);
         //akonáhle príde správa od clientHandlera že je spustiteľná, tak sa začne vykonávať.
         if(sim->sim_state == RUNNING) {
             int chance = rand() % (sim->op->chanceDown + sim->op->chanceLeft + sim->op->chanceRight + sim->op->chanceUp);
