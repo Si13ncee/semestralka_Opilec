@@ -7,6 +7,10 @@
 #include <netinet/in.h>
 #include <pthread.h>
 #include <time.h>
+#include <sys/stat.h> // Pre mkdir
+#include <sys/types.h> // Pre mkdir
+#include <string.h>    // Pre strcat
+#include <dirent.h>
 
 #define DEFAULT_MOVEMENT_CHANCE 25
 #define DEFAULT_BLOCKADE_CHANCE 50
@@ -25,6 +29,7 @@ typedef struct {
     int chanceRight;
     int chanceLeft;
     int chanceDown;
+    char simulationName[100];
 } opilec;
 
 typedef struct {
@@ -42,6 +47,8 @@ typedef struct {
     int rozmerY;
     int failed;
     int success;
+    int alokovane;
+    char simulationName[100];
 } simulation;
 
 typedef struct {
@@ -49,9 +56,41 @@ typedef struct {
     char** argv;
     simulation* sim_c;
 
-    char simulationName[100];
 
 } config;
+
+void vypisSim(simulation* sim);
+void saveToFile(simulation *sim);
+void loadFromFile();
+
+void vypisSouboryKlientovi(int clientSocket) {
+    char* folderName = "svety";
+    DIR* dir = opendir(folderName);
+    if (dir == NULL) {
+        perror("Nepodarilo sa otvoriť adresár");
+        send(clientSocket, "Nepodarilo sa otvoriť adresár svety/\n", strlen("Nepodarilo sa otvoriť adresár svety/\n"), 0);
+        return;
+    }
+
+    struct dirent* entry;
+    char buffer[1024];
+    buffer[0] = '\0'; // Inicializácia bufferu pre správu klientovi
+
+    strcat(buffer, "Zoznam súborov v adresári svety/:\n");
+
+    while ((entry = readdir(dir)) != NULL) {
+        // Ignoruj "." a ".."
+        if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            strcat(buffer, entry->d_name);
+            strcat(buffer, "\n");
+        }
+    }
+
+    closedir(dir);
+
+    // Poslanie zoznamu klientovi
+    send(clientSocket, buffer, strlen(buffer), 0);
+}
 
 void reinitializeWorldForReplication(simulation *sim) {
     for (int i = 0; i < sim->rozmerX; i++) {
@@ -60,6 +99,8 @@ void reinitializeWorldForReplication(simulation *sim) {
 
     sim->op->x = sim->op->OriginalX;
     sim->op->y = sim->op->OriginalY;
+
+    vypisSim(sim);
 
 }
 
@@ -109,7 +150,6 @@ void vypisSim(simulation* sim) {
             printf("\n"); // Nový riadok pre každý riadok poľa
         }
         printf("\nLegenda: \n. -> voľné miesto\n# -> prekážka\nX -> opilec\n");
-        printf("\nPočet pohybov Opilca: %d\n", sim->op->pocetPohybov);
     } else {
         printf("\nNesprávny mód!\n");
         return;
@@ -118,19 +158,27 @@ void vypisSim(simulation* sim) {
 
 // bude sa volať v client Handlerovi. Simulation manager začne pracovať až po tom, čo sa ukončí initialize world úspešne
 int initializeWorld(simulation* sim) {
+    if (sim->alokovane == 0) {
+        sim->alokovane = 1;
+        sim->world = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
+        for (int i = 0; i < sim->rozmerX; i++) {
+            sim->world[i] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
+        }
+
+        sim->worldOriginal = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
+        for (int i = 0; i < sim->rozmerX; i++) {
+            sim->worldOriginal[i] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
+        }
+    } else {
+        for (int i = 0; i < sim->rozmerX; i++) {
+            for (int j = 0; j < sim->rozmerY; j++) {
+                sim->world[i][j] = 0;
+                sim->worldOriginal[i][j] = 0;
+            }
+        }
+    }
     sim->failed = 0;
     sim->success = 0;
-    //printf("Debug: Začínam alokovať svet.\n");
-    sim->world = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
-    for (int i = 0; i < sim->rozmerX; i++) {
-        sim->world[i] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
-    }
-
-    sim->worldOriginal = malloc(sim->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
-    for (int i = 0; i < sim->rozmerX; i++) {
-        sim->worldOriginal[i] = malloc(sim->rozmerY * sizeof(int)); // Každý riadok
-    }
-    //printf("Debug: Končím alokovať svet.\n");
 
     sim->op->x = rand() % sim->rozmerX;
     sim->op->y = rand() % sim->rozmerY;
@@ -138,7 +186,6 @@ int initializeWorld(simulation* sim) {
     sim->op->OriginalX = sim->op->x;
     sim->op->OriginalY = sim->op->y;
 
-    //printf("Debug: Začínam setupovať svet.\n");
     if (sim->simType == 0) { // setup bez prekážok
         for (int i = 0; i < sim->rozmerX; i++) {
             for (int j = 0; j < sim->rozmerY; j++) {
@@ -167,8 +214,10 @@ int initializeWorld(simulation* sim) {
 
                 if (rand() % 100 < DEFAULT_BLOCKADE_CHANCE && dfs(sim, 0, 0, sim->op, navstivene) && (i != 0 && j != 0) && (i != sim->op->x && j != sim->op->y)) {
                     sim->world[i][j] = 1;
+                    sim->worldOriginal[i][j] = 1;
                 } else{
                     sim->world[i][j] = 0;
+                    sim->worldOriginal[i][j] = 0;
                 }
 
             }
@@ -179,6 +228,7 @@ int initializeWorld(simulation* sim) {
         free(navstivene);
 
         sim->world[sim->op->x][sim->op->y] = 2;
+        sim->worldOriginal[sim->op->x][sim->op->y] = 2;
     } else {
         printf("Zle zadaný vstup typu simulácie.\n");
         return -1;
@@ -187,7 +237,6 @@ int initializeWorld(simulation* sim) {
     //printf("Debug: Skončil som setup sveta.\n");
 
     vypisSim(sim);
-
     return 0;
 }
 
@@ -241,7 +290,7 @@ void *clientHandler(void *arg) {
         // Kontinuálna komunikácia
         while (1) {
             memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
-            send(new_socket, "Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] ukončiť\n", strlen("Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] ukončiť"), 0);
+            send(new_socket, "Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciui zo súboru\n", strlen("Čo si prajete vykonať?\nMožnosti:\n [1.] začať simuláciu\n [2.] Vypíš Štatistiky z poslednej simulácie\n [3.] Načítaj simuláciui zo súboru\n"), 0);
 
             valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0); // Čítanie dát od klienta
             if (valread <= 0) {
@@ -264,9 +313,9 @@ void *clientHandler(void *arg) {
                 if (valread > 0) {
                     buffer[valread] = '\0';
                     pthread_mutex_lock(&conf->sim_c->mutex);
-                    strncpy(conf->simulationName, buffer, sizeof(conf->simulationName) - 1);
-                    conf->simulationName[sizeof(conf->simulationName) - 1] = '\0';
-                    printf("Názov simulácie: %s\n", conf->simulationName);
+                    strncpy(conf->sim_c->simulationName, buffer, sizeof(conf->sim_c->simulationName) - 1);
+                    conf->sim_c->simulationName[sizeof(conf->sim_c->simulationName) - 1] = '\0';
+                    printf("Názov simulácie: %s\n", conf->sim_c->simulationName);
                     pthread_mutex_unlock(&conf->sim_c->mutex);
                 }
 
@@ -381,8 +430,8 @@ void *clientHandler(void *arg) {
                 }
 
                 // ZADANIE TYPU SIMULACIE
-                send(new_socket, "Zadajte typ simulácie \n[1.] Bez prekážok\n[2.] S prekážkami: ",
-                     strlen("Zadajte typ simulácie \n[1.] Bez prekážok\n[2.] S prekážkami: "), 0);
+                send(new_socket, "Zadajte typ simulácie \n[0.] Bez prekážok\n[1.] S prekážkami: ",
+                     strlen("Zadajte typ simulácie \n[0.] Bez prekážok\n[1.] S prekážkami: "), 0);
                 memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
                 valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
                 if (valread > 0) {
@@ -400,12 +449,209 @@ void *clientHandler(void *arg) {
 
 
 
-            } else if (strcmp(buffer, "STOP") == 0) {
+            }
+            else if (strcmp(buffer, "STOP") == 0) {
                 send(new_socket, "Vypínam server!", strlen("Vypínam server!"), 0);
+                pthread_mutex_lock(&conf->sim_c->mutex);
                 conf->sim_c->sim_state = STOPPED;
+                pthread_mutex_unlock(&conf->sim_c->mutex);
                 printf("Vypínam server!\n");
                 break;
-            } else {
+            }
+            else if (strcmp(buffer, "2") == 0) {
+                pthread_mutex_lock(&conf->sim_c->mutex);
+                size_t outputSize = 1024;
+                char* output = malloc(outputSize);
+                if (!output) {
+                    perror("malloc failed");
+                    exit(EXIT_FAILURE);
+                }
+                output[0] = '\0';
+
+                for (int i = 0; i < conf->sim_c->rozmerX; i++) {
+                    for (int j = 0; j < conf->sim_c->rozmerY; j++) {
+                        // Ak sa buffer zaplní, zväčšíme ho
+                        if (strlen(output) + 32 >= outputSize) { // 32 je rezerva pre ďalšie číslo
+                            outputSize *= 2;
+                            output = realloc(output, outputSize);
+                            if (!output) {
+                                perror("realloc failed");
+                                exit(EXIT_FAILURE);
+                            }
+                        }
+                        // Pridanie čísla do reťazca
+                        char temp[32];
+                        char znak;
+                        if (conf->sim_c->worldOriginal[i][j] == 0) {
+                            znak = '.';
+                        } else if (conf->sim_c->worldOriginal[i][j] == 1) {
+                            znak = '#';
+                        } else if (conf->sim_c->worldOriginal[i][j] == 2) {
+                            znak = 'X';
+                        }
+                        snprintf(temp, sizeof(temp), "%c ", znak);
+                        strcat(output, temp);
+
+                    }
+                    strcat(output, "\n"); // Riadok ukončíme novým riadkom
+                }
+                // Pridanie štatistík do výstupu
+                char stats[128];
+                snprintf(stats, sizeof(stats), "\nÚspešných pokusov: %d\nNeúspešných pokusov: %d\n",conf->sim_c->success, conf->sim_c->failed);
+
+                // Ak sa buffer zaplní, zväčšíme ho
+                if (strlen(output) + strlen(stats) >= outputSize) {
+                    outputSize += strlen(stats) + 1;
+                    output = realloc(output, outputSize);
+                    if (!output) {
+                        perror("realloc failed");
+                        exit(EXIT_FAILURE);
+                    }
+                }
+
+                strcat(output, stats);
+                send(new_socket, output, strlen(output), 0);
+
+                free(output);
+                pthread_mutex_unlock(&conf->sim_c->mutex);
+            }
+            else if (strcmp(buffer, "3") == 0) {
+                // načítanie simulácie zo súboru
+                pthread_mutex_lock(&conf->sim_c->mutex);
+                DIR* dir = opendir("svety");
+                if (dir == NULL) {
+                    perror("Nepodarilo sa otvoriť adresár svety/");
+                    send(new_socket, "Nepodarilo sa otvoriť adresár svety/\n", strlen("Nepodarilo sa otvoriť adresár svety/\n"), 0);
+                    continue;
+                }
+
+                struct dirent* entry;
+                char buffer[1024];
+                buffer[0] = '\0'; // Inicializácia bufferu pre zoznam súborov
+
+                strcat(buffer, "Zoznam súborov v adresári svety/:\n");
+                while ((entry = readdir(dir)) != NULL) {
+                    if (strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+                        strcat(buffer, entry->d_name);
+                        strcat(buffer, "\n");
+                    }
+                }
+                closedir(dir);
+                strcat(buffer, "\nZadajte názov súboru na načítanie:\n");
+
+                // Poslať zoznam klientovi
+                send(new_socket, buffer, strlen(buffer), 0);
+                memset(buffer, 0, sizeof(buffer));
+
+                ssize_t valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                if (valread <= 0) {
+                    perror("recv failed");
+                    continue;
+                }
+                buffer[valread] = '\0';
+                buffer[strcspn(buffer, "\r\n")] = 0;
+
+                char filePath[256];
+                snprintf(filePath, sizeof(filePath), "svety/%s", buffer);
+                FILE* file = fopen(filePath, "r");
+                if (!file) {
+                    perror("Nepodarilo sa otvoriť súbor");
+                    send(new_socket, "Nepodarilo sa otvoriť zadaný súbor.\n", strlen("Nepodarilo sa otvoriť zadaný súbor.\n"), 0);
+                    continue;
+                }
+
+                char line[256];
+
+
+                fscanf(file, "%d", &conf->sim_c->maxPocetKrokov);
+                fscanf(file, "%d", &conf->sim_c->rozmerX);
+                fscanf(file, "%d", &conf->sim_c->rozmerY);
+
+                fscanf(file, "%d", &conf->sim_c->op->OriginalX);
+                fscanf(file, "%d", &conf->sim_c->op->OriginalY);
+
+                if (fgets(line, sizeof(line), file) != NULL) {
+                    // Vypísanie riadku, ktorý bol práve načítaný
+                    printf("Načítaný riadok: %s", line);
+                } else {
+                    printf("Nepodarilo sa načítať riadok.\n");
+                }
+
+                if (conf->sim_c->alokovane == 1) {
+                    for (int i = 0; i < conf->sim_c->rozmerX; i++) {
+                        free(conf->sim_c->world[i]);
+                    }
+                    free(conf->sim_c->world);
+
+                    for (int i = 0; i < conf->sim_c->rozmerX; i++) {
+                        free(conf->sim_c->worldOriginal[i]);
+                    }
+                    free(conf->sim_c->worldOriginal);
+                }
+
+                conf->sim_c->worldOriginal = malloc(conf->sim_c->rozmerX * sizeof(int*));
+                for (int i = 0; i < conf->sim_c->rozmerX; i++) {
+                    conf->sim_c->worldOriginal[i] = malloc(conf->sim_c->rozmerY * sizeof(int));
+                }
+                int i = 0;
+                while (fgets(line, sizeof(line), file) != NULL) {
+                    // Prejdeme po každom riadku
+                    int j = 0;
+                    char* token = strtok(line, " \t"); // Rozdelíme riadok podľa medzier a tabulátorov
+                    while (token != NULL && j < conf->sim_c->rozmerY) {
+                        conf->sim_c->worldOriginal[i][j] = atoi(token); // Konvertujeme na číslo
+                        token = strtok(NULL, " \t"); // Získame ďalší token
+                        j++;
+                    }
+                    i++;
+                    if (i >= conf->sim_c->rozmerX) break; // Prejdeme len požadovaný počet riadkov
+                }
+
+                for (int i = 0; i < conf->sim_c->rozmerX; i++) {
+                    for (int j = 0; j < conf->sim_c->rozmerY; j++) {
+                        printf("%d ", conf->sim_c->worldOriginal[i][j]);
+                    }
+                }
+
+                conf->sim_c->world = malloc(conf->sim_c->rozmerX * sizeof(int*)); // Pole ukazovateľov na riadky
+                for (int i = 0; i < conf->sim_c->rozmerX; i++) {
+                    conf->sim_c->world[i] = malloc(conf->sim_c->rozmerY * sizeof(int)); // Každý riadok
+                }
+
+                // ZADANIE NÁZVU SIMULÁCIE
+                send(new_socket, "Zadajte názov simulácie: ", strlen("Zadajte názov simulácie: "), 0);
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                if (valread > 0) {
+                    buffer[valread] = '\0';
+                    strncpy(conf->sim_c->simulationName, buffer, sizeof(conf->sim_c->simulationName) - 1);
+                    conf->sim_c->simulationName[sizeof(conf->sim_c->simulationName) - 1] = '\0';
+                    printf("Názov simulácie: %s\n", conf->sim_c->simulationName);
+                }
+
+                // ZADANIE POČTU REPLIKÁCIÍ
+                send(new_socket, "Zadajte počet replikácií simulácie: ",
+                     strlen("Zadajte počet replikácií simulácie: "), 0);
+                memset(buffer, 0, sizeof(buffer)); // Vyčistiť buffer
+                valread = recv(new_socket, buffer, sizeof(buffer) - 1, 0);
+                if (valread > 0) {
+                    buffer[valread] = '\0';
+                    conf->sim_c->NumOfReplications = atoi(buffer);
+                    printf("Počet replikácií simulácie: %d\n", conf->sim_c->NumOfReplications);
+                }
+
+                fclose(file);
+                conf->sim_c->pocetSpravenychReplikacii = 0;
+                conf->sim_c->sim_state = RUNNING;
+                printf("DEBUG: INICIALIZUJEM REPLIKÁCIU");
+                printf("RozmerX = %d", conf->sim_c->rozmerX);
+                printf("RozmerY = %d", conf->sim_c->rozmerY);
+                reinitializeWorldForReplication(conf->sim_c);
+                printf("DEBUG: DOKONČIL SOM INICIALIZACIU REPLIKACIE REPLIKÁCIU");
+
+                pthread_mutex_unlock(&conf->sim_c->mutex);
+            }
+            else {
                 send(new_socket, "Neznáma voľba, skúste znova.\n", strlen("Neznáma voľba, skúste znova.\n"), 0);
             }
         }
@@ -529,16 +775,21 @@ void *simulationManager(void *arg) {
 
             if(sim->op->x == 0 && sim->op->y == 0 || sim->maxPocetKrokov == sim->op->pocetPohybov) {
                 if (sim->pocetSpravenychReplikacii == sim->NumOfReplications) {
-                    for (int i = 0; i < sim->rozmerX; i++) {
-                        free(sim->world[i]);
-                    }
-                    free(sim->world);
 
                     printf("\nSimulácia sa ukončila!\nPočet úspešných replikácií: %d", sim->success);
                     printf("\nPočet neúspešných replikácií: %d\n", sim->failed);
                     sim->sim_state = PAUSED;
                     sim->pocetSpravenychReplikacii = 0;
                     sim->op->pocetPohybov = 0;
+
+                    for (int i = 0; i < sim->rozmerX; i++) {
+                        for (int j = 0; j < sim->rozmerY; j++) {
+                            printf("%d ", sim->worldOriginal[i][j]);
+                        }
+                        printf("\n");
+                    }
+
+                    saveToFile(sim);
                 } else {
                     if (!(sim->op->x == 0 && sim->op->y == 0)) {
                         printf("\n!!Opilcovi sa nepodarilo dostať domov. Odpadol niekde na ulici!!\n");
@@ -547,9 +798,6 @@ void *simulationManager(void *arg) {
                         printf("\nOpilcovi sa podarilo dostať domov! Spravil len %d krokov!\n", sim->op->pocetPohybov);
                         sim->success++;
                     }
-                    printf("\nDEBUG: REINICIALIZUJEM SVET!!!!");
-                    printf("\nDEBUG: pozicia opilcaX: %d", sim->op->x);
-                    printf("\nDEBUG: pozicia opilcaY: %d", sim->op->y);
                     sim->op->pocetPohybov = 0;
                     reinitializeWorldForReplication(sim);
                     sim->pocetSpravenychReplikacii++;
@@ -568,6 +816,51 @@ void *simulationManager(void *arg) {
     }
 }
 
+void saveToFile(simulation *sim) {
+    // Kontrola a vytvorenie adresára
+    char* folderName = "svety";
+    char* fileName = sim->simulationName;
+    struct stat st = {0};
+    if (stat(folderName, &st) == -1) {
+        if (mkdir(folderName, 0700) != 0) {
+            perror("Nepodarilo sa vytvoriť adresár");
+            return;
+        }
+    }
+
+    // Vytvorenie cesty k súboru
+    char fullPath[256];
+    snprintf(fullPath, sizeof(fullPath), "%s/%s", folderName, fileName);
+
+    // Otvorenie súboru
+    FILE* file = fopen(fullPath, "w");
+    if (file == NULL) {
+        perror("Nepodarilo sa otvoriť súbor");
+        return;
+    }
+
+    // Zápis základných atribútov
+    fprintf(file, "%d\n", sim->maxPocetKrokov);
+    fprintf(file, "%d\n", sim->rozmerX);
+    fprintf(file, "%d\n", sim->rozmerY);
+    fprintf(file, "%d\n", sim->op->OriginalX);
+    fprintf(file, "%d\n", sim->op->OriginalY);
+
+
+    // Zápis matice worldOriginal
+    fprintf(file, "Počiatočný stav worldOriginal:\n");
+    for (int i = 0; i < sim->rozmerX; i++) {
+        for (int j = 0; j < sim->rozmerY; j++) {
+            fprintf(file, "%d ", sim->worldOriginal[i][j]); // Zápis jednotlivých hodnôt
+        }
+        fprintf(file, "\n"); // Nový riadok po každom riadku matice
+    }
+
+
+    fclose(file);
+    printf("Údaje boli úspešne uložené do súboru %s\n", fullPath);
+
+}
 
 
 int main(int argc, char** argv) {
@@ -575,7 +868,7 @@ int main(int argc, char** argv) {
     simulation sim;
     opilec opi;
     sim.op = &opi;
-    config sc = {.argc = argc, .argv = argv, .sim_c = &sim, .simulationName = "NaN"};
+    config sc = {.argc = argc, .argv = argv, .sim_c = &sim};
     pthread_mutex_init(&sim.mutex, NULL);
     sim.sim_state = PAUSED;
     opi.chanceDown = DEFAULT_MOVEMENT_CHANCE;
@@ -596,6 +889,11 @@ int main(int argc, char** argv) {
         free(sim.world[i]);
     }
     free(sim.world);
+
+    for (int i = 0; i < sim.rozmerX; i++) {
+        free(sim.worldOriginal[i]);
+    }
+    free(sim.worldOriginal);
     pthread_mutex_destroy(&sim.mutex);
 
     return 0;
